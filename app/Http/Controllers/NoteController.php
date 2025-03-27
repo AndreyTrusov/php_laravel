@@ -2,44 +2,42 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Note;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
 
 class NoteController extends Controller
 {
     public function index()
     {
-        $notes = DB::table('notes')
-            ->orderBy('updated_at', 'desc')
-            ->get();
+        $notes = Note::orderBy('updated_at', 'desc')->get();
+
         return response()->json($notes);
     }
 
     public function store(Request $request)
     {
-        $note = DB::table('notes')->insert([
+        $note = Note::create([
             'user_id' => $request->user_id,
             'title' => $request->title,
-            'body' => $request->body,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'body' => $request->body
         ]);
 
         if ($note) {
-            return response()->json(['message' => 'Poznámka bola vytvorená'], Response::HTTP_CREATED);
+            return response()->json(['message' => 'Poznámka bola vytvorená'],
+                Response::HTTP_CREATED);
         } else {
-            return response()->json(['message' => 'Poznámka nebola vytvorená'], Response::HTTP_FORBIDDEN);
+            return response()->json(['message' => 'Poznámka nebola vytvorená'],
+                Response::HTTP_FORBIDDEN);
         }
-
     }
-
     public function show($id)
     {
-        $note = DB::table('notes')->where('id', $id)->first();
+        $note = Note::find($id);
 
         if (!$note) {
-            return response()->json(['message' => 'Poznámka nebola nájdená'], Response::HTTP_NOT_FOUND);
+            return response()->json(['message' => 'Poznámka nebola nájdená'],
+                Response::HTTP_NOT_FOUND);
         }
 
         return response()->json($note);
@@ -47,52 +45,36 @@ class NoteController extends Controller
 
     public function update(Request $request, $id)
     {
-        $updated = DB::table('notes')->where('id', $id)->update([
+        $note = Note::find($id);
+
+        if (!$note) {
+            return response()->json(['message' => 'Poznámka nebola nájdená'],
+                Response::HTTP_NOT_FOUND);
+        }
+
+        $note->update([
             'title' => $request->title,
-            'body' => $request->body,
-            'updated_at' => now(),
+            'body' => $request->body
         ]);
 
-        if ($updated) {
-            return response()->json(['message' => 'Poznámka bola aktualizovaná'], Response::HTTP_OK);
-        } else {
-            return response()->json(['message' => 'Nič sa nezmenilo'], Response::HTTP_OK);
-        }
+        return response()->json([
+            'message' => 'Poznámka bola aktualizovaná',
+            'note' => $note
+        ]);
     }
 
     public function destroy($id)
     {
-        $deleted = DB::table('notes')->where('id', $id)->delete();
+        $note = Note::find($id);
 
-        if ($deleted) {
-            return response()->json(['message' => 'Poznámka bola vymazaná'], Response::HTTP_OK);
-        } else {
-            return response()->json(['message' => 'Poznámka nebola nájdená'], Response::HTTP_NOT_FOUND);
+        if (!$note) {
+            return response()->json(['message' => 'Poznámka nebola nájdená'],
+                Response::HTTP_NOT_FOUND);
         }
-    }
 
-    public function notesWithUsers()
-    {
-        $notes = DB::table('notes')
-            ->join('users', 'notes.user_id', '=', 'users.id')
-            ->select('notes.*', 'users.name as user_name')
-            ->get();
+        $note->delete();
 
-        return response()->json($notes);
-    }
-
-    public function usersWithNoteCount()
-    {
-        $users = DB::table('users')
-            ->select('users.id', 'users.name')
-            ->selectSub(function ($query) {
-                $query->from('notes')
-                    ->selectRaw('COUNT(*)')
-                    ->whereColumn('notes.user_id', 'users.id');
-            }, 'note_count')
-            ->get();
-
-        return response()->json($users);
+        return response()->json(['message' => 'Poznámka bola vymazaná']);
     }
 
     public function searchNotes(Request $request)
@@ -100,59 +82,17 @@ class NoteController extends Controller
         $query = $request->query('q');
 
         if (empty($query)) {
-            return response()->json(['message' => 'Musíte zadať dopyt na vyhľadávanie'], Response::HTTP_BAD_REQUEST);
+            return response()->json(['message' => 'Musíte zadať dopyt na vyhľadávanie'],
+                Response::HTTP_BAD_REQUEST);
         }
 
-        $notes = DB::table('notes')
-            ->where('title', 'like', '%' . $query . '%')
-            ->orWhere('body', 'like', '%' . $query . '%')
-            ->get();
+        $notes = Note::searchByTitleOrBody($query);
 
         if ($notes->isEmpty()) {
-            return response()->json(['message' => 'Žiadne poznámky sa nenašli'], Response::HTTP_NOT_FOUND);
+            return response()->json(['message' => 'Žiadne poznámky sa nenašli'],
+                Response::HTTP_NOT_FOUND);
         }
 
         return response()->json($notes);
     }
-
-    public function usersWithNotesCount()
-    {
-        $users = DB::table('notes')
-            ->join('users', 'notes.user_id', '=', 'users.id')
-            ->select('users.id', 'users.name', DB::raw('COUNT(notes.id) as note_count'))
-            ->groupBy('users.id', 'users.name')
-            ->having('note_count', '>', 1)
-            ->orderByDesc('note_count')
-            ->get();
-
-        return response()->json($users);
-    }
-
-    public function longestAndShortestNote()
-    {
-        $longest = DB::table('notes')
-            ->select('id', 'title', 'body', DB::raw('LENGTH(body) as length'))
-            ->orderByDesc('length')
-            ->first();
-
-        $shortest = DB::table('notes')
-            ->select('id', 'title', 'body', DB::raw('LENGTH(body) as length'))
-            ->orderBy('length')
-            ->first();
-
-        return response()->json([
-            'longest' => $longest,
-            'shortest' => $shortest
-        ]);
-    }
-
-    public function notesLastWeek()
-    {
-        $count = DB::table('notes')
-            ->where('created_at', '>=', now()->subDays(7))
-            ->count();
-
-        return response()->json(['last_week_notes' => $count]);
-    }
-
 }
