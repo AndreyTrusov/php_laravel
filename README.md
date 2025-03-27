@@ -83,10 +83,10 @@ The application allows users to create notes and organize them using categories.
 - Eloquent ORM
 - Laravel Factories and Seeders
 
-Homework #1:
+## Homework #1 Photo:
 ![Screenshot 2025-03-20 at 22 03 27](https://github.com/user-attachments/assets/61019e63-75a1-4797-86d4-077536770fc1)
 
-Homework #2:
+## Homework #2 Photos:
 <img width="1170" alt="image" src="https://github.com/user-attachments/assets/69dd2e5f-93af-446a-b41b-bf5f9cf3f7ef" />
 <img width="1025" alt="image" src="https://github.com/user-attachments/assets/cfd7be60-a296-4e93-bc71-bc0e6ec0da80" />
 
