@@ -10,34 +10,56 @@ class NoteController extends Controller
 {
     public function index()
     {
-        $notes = Note::orderBy('updated_at', 'desc')->get();
+        $notes = Note::with(['user', 'categories'])
+            ->orderBy('updated_at', 'desc')
+            ->get();
 
         return response()->json($notes);
     }
 
     public function store(Request $request)
     {
-        $note = Note::create([
-            'user_id' => $request->user_id,
-            'title' => $request->title,
-            'body' => $request->body
-        ]);
+        try {
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+                'title' => 'required|string|min:5|max:255',
+                'body' => 'required|string|min:10',
+                'categories' => 'sometimes|array|max:3',
+                'categories.*' => 'exists:categories,id'
+            ]);
 
-        if ($note) {
-            return response()->json(['message' => 'Poznámka bola vytvorená'],
-                Response::HTTP_CREATED);
-        } else {
-            return response()->json(['message' => 'Poznámka nebola vytvorená'],
-                Response::HTTP_FORBIDDEN);
+            $note = Note::create([
+                'user_id' => $validated['user_id'],
+                'title' => $validated['title'],
+                'body' => $validated['body']
+            ]);
+
+            if (!empty($validated['categories'])) {
+                $note->categories()->sync($validated['categories']);
+            }
+
+            $note->load(['user', 'categories']);
+
+            return response()->json([
+                'message' => 'Poznámka bola vytvorená',
+                'note' => $note
+            ], Response::HTTP_CREATED);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri vytváraní poznámky',
+                'errors' => method_exists($e, 'errors') ? $e->errors() : [$e->getMessage()]
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
     public function show($id)
     {
-        $note = Note::find($id);
+        $note = Note::with(['user', 'categories'])->find($id);
 
         if (!$note) {
-            return response()->json(['message' => 'Poznámka nebola nájdená'],
-                Response::HTTP_NOT_FOUND);
+            return response()->json([
+                'message' => 'Poznámka nebola nájdená'
+            ], Response::HTTP_NOT_FOUND);
         }
 
         return response()->json($note);
@@ -45,54 +67,154 @@ class NoteController extends Controller
 
     public function update(Request $request, $id)
     {
-        $note = Note::find($id);
+        try {
+            $note = Note::find($id);
 
-        if (!$note) {
-            return response()->json(['message' => 'Poznámka nebola nájdená'],
-                Response::HTTP_NOT_FOUND);
+            if (!$note) {
+                return response()->json([
+                    'message' => 'Poznámka nebola nájdená'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $validated = $request->validate([
+                'title' => 'required|string|min:5|max:255',
+                'body' => 'required|string|min:10',
+                'categories' => 'sometimes|array|max:3',
+                'categories.*' => 'exists:categories,id'
+            ]);
+
+            $note->update([
+                'title' => $validated['title'],
+                'body' => $validated['body']
+            ]);
+
+            if (isset($validated['categories'])) {
+                $note->categories()->sync($validated['categories']);
+            }
+
+            $note->load(['user', 'categories']);
+
+            return response()->json([
+                'message' => 'Poznámka bola aktualizovaná',
+                'note' => $note
+            ], Response::HTTP_OK);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri aktualizácii poznámky',
+                'errors' => method_exists($e, 'errors') ? $e->errors() : [$e->getMessage()]
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
-
-        $note->update([
-            'title' => $request->title,
-            'body' => $request->body
-        ]);
-
-        return response()->json([
-            'message' => 'Poznámka bola aktualizovaná',
-            'note' => $note
-        ]);
     }
-
     public function destroy($id)
     {
-        $note = Note::find($id);
+        try {
+            $note = Note::find($id);
 
-        if (!$note) {
-            return response()->json(['message' => 'Poznámka nebola nájdená'],
-                Response::HTTP_NOT_FOUND);
+            if (!$note) {
+                return response()->json([
+                    'message' => 'Poznámka nebola nájdená'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            $note->categories()->detach();
+
+            $note->delete();
+
+            return response()->json([
+                'message' => 'Poznámka bola vymazaná'
+            ], Response::HTTP_OK);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri mazaní poznámky',
+                'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-
-        $note->delete();
-
-        return response()->json(['message' => 'Poznámka bola vymazaná']);
     }
 
     public function searchNotes(Request $request)
     {
-        $query = $request->query('q');
+        try {
+            $validated = $request->validate([
+                'q' => 'required|string|min:2|max:100'
+            ]);
 
-        if (empty($query)) {
-            return response()->json(['message' => 'Musíte zadať dopyt na vyhľadávanie'],
-                Response::HTTP_BAD_REQUEST);
+            $query = $validated['q'];
+
+            $notes = Note::with(['user', 'categories'])
+                ->searchByTitleOrBody($query);
+
+            if ($notes->isEmpty()) {
+                return response()->json([
+                    'message' => 'Žiadne poznámky sa nenašli'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            return response()->json($notes);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri vyhľadávaní poznámok',
+                'errors' => method_exists($e, 'errors') ? $e->errors() : [$e->getMessage()]
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+    }
 
-        $notes = Note::searchByTitleOrBody($query);
+    public function getNotesByUser($userId)
+    {
+        try {
+            $validated = validator(['user_id' => $userId], [
+                'user_id' => 'required|exists:users,id'
+            ])->validate();
 
-        if ($notes->isEmpty()) {
-            return response()->json(['message' => 'Žiadne poznámky sa nenašli'],
-                Response::HTTP_NOT_FOUND);
+            $notes = Note::with(['categories'])
+                ->where('user_id', $userId)
+                ->orderBy('updated_at', 'desc')
+                ->get();
+
+            if ($notes->isEmpty()) {
+                return response()->json([
+                    'message' => 'Používateľ nemá žiadne poznámky'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            return response()->json($notes);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri získavaní poznámok používateľa',
+                'errors' => method_exists($e, 'errors') ? $e->errors() : [$e->getMessage()]
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+    }
+    public function getNotesByCategory($categoryId)
+    {
+        try {
+            $validated = validator(['category_id' => $categoryId], [
+                'category_id' => 'required|exists:categories,id'
+            ])->validate();
 
-        return response()->json($notes);
+            $notes = Note::with(['user', 'categories'])
+                ->whereHas('categories', function($query) use ($categoryId) {
+                    $query->where('categories.id', $categoryId);
+                })
+                ->orderBy('updated_at', 'desc')
+                ->get();
+
+            if ($notes->isEmpty()) {
+                return response()->json([
+                    'message' => 'V tejto kategórii nie sú žiadne poznámky'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            return response()->json($notes);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Chyba pri získavaní poznámok z kategórie',
+                'errors' => method_exists($e, 'errors') ? $e->errors() : [$e->getMessage()]
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
     }
 }

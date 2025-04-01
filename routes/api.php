@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\NoteController;
 
 //Route::apiResource('/notes', NoteController::class);
+Route::get('/test', function () {
+    return response()->json(['message' => 'API is working']);
+});
 
 Route::get('/notes-with-users', [NoteController::class, 'notesWithUsers']);
 Route::get('/users-with-note-count', [NoteController::class, 'usersWithNoteCount']);
@@ -27,3 +30,6 @@ Route::get('/notes/{id}', [NoteController::class, 'show']);
 Route::put('/notes/{id}', [NoteController::class, 'update']);
 Route::delete('/notes/{id}', [NoteController::class, 'destroy']);
 Route::get('/notes/search', [NoteController::class, 'searchNotes']);
+
+Route::get('/users/{userId}/notes', [NoteController::class, 'getNotesByUser']);
+Route::get('/categories/{categoryId}/notes', [NoteController::class, 'getNotesByCategory']);
